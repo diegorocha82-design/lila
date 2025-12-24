@@ -16,10 +16,16 @@ final private class FirebasePush(
     configs: FirebasePush.BothConfigs
 )(using Executor, Scheduler):
 
-  if configs.lichobile.googleCredentials.isDefined then
-    logger.info("Lichobile Firebase push notifications are enabled.")
-  if configs.mobile.googleCredentials.isDefined then
-    logger.info("Mobile Firebase push notifications are enabled.")
+  List(
+    ("lichobile", configs.lichobile),
+    ("mobile", configs.mobile)
+  ).map: (project, config) =>
+    lila
+      .log("firebase")
+      .info(
+        s"Push notifications for $project are " + (if config.googleCredentials.isDefined then "enabled"
+                                                   else "disabled")
+      )
 
   private val workQueue =
     scalalib.actor.AsyncActorSequencer(
@@ -40,9 +46,17 @@ final private class FirebasePush(
               data <- data.value
               _ <-
                 if !data.mobileCompatible.exists(device.isMobileVersionCompatible)
-                then funit // don't send to mobile if incompatible version
+                then
+                  logger.warn(
+                    s"Skipping firebase push to user $userId on device $device due to incompatible app version"
+                  )
+                  funit // don't send to mobile if incompatible version
                 else if data.firebaseMod.contains(PushApi.Data.FirebaseMod.DataOnly) && !device.isMobile
-                then funit // don't send data messages to lichobile
+                then
+                  logger.warn(
+                    s"Skipping firebase data-only push to user $userId on lichobile device $device"
+                  )
+                  funit // don't send data messages to lichobile
                 else
                   for
                     // access token has 1h lifetime and is requested only if expired
@@ -52,6 +66,9 @@ final private class FirebasePush(
                           creds.refreshIfExpired()
                           creds.getAccessToken()
                     }.chronometer.mon(_.push.googleTokenTime).result
+                    _ <-
+                      lila.log("firebase").info(s"User $userId, device: $device")
+                      funit
                     _ <- send(token, device, config, data)
                   yield ()
             yield ()
@@ -66,6 +83,8 @@ final private class FirebasePush(
       config: FirebasePush.Config,
       data: PushApi.Data
   ): Funit =
+    lila.log("firebase").info(s"POST to firebase - push to device $device with data $data")
+    lila.log("firebase").info(s"POST to firebase - URL: ${config.url}")
     ws.url(config.url)
       .withHttpHeaders(
         "Authorization" -> s"Bearer ${token.getTokenValue}",
@@ -98,6 +117,8 @@ final private class FirebasePush(
                 )
         )
       .flatMap: res =>
+        lila.log("firebase").info(s"POST Firebase response status: ${res.status}")
+        lila.log("firebase").info(s"POST Firebase response body: ${res.body}")
         lila.mon.push.firebaseStatus(res.status).increment()
         lila.mon.push
           .firebaseType(data.firebaseMod.fold("both"):
@@ -125,6 +146,13 @@ private object FirebasePush:
       try
         json.value.some
           .filter(_.nonEmpty)
+          .map: jsonOrPath =>
+            import java.nio.file.{ Files, Paths }
+            import java.nio.charset.StandardCharsets.UTF_8
+            val path = Paths.get(jsonOrPath)
+            if Files.exists(path) && Files.isRegularFile(path) then
+              new String(Files.readAllBytes(path), UTF_8)
+            else jsonOrPath
           .map: json =>
             import java.nio.charset.StandardCharsets.UTF_8
             import scala.jdk.CollectionConverters.*

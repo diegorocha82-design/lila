@@ -38,7 +38,14 @@ final class Env(
   private val deviceApi = DeviceApi(db(config.deviceColl))
   val webSubscriptionApi = WebSubscriptionApi(db(config.subscriptionColl))
 
-  export deviceApi.{ register as registerDevice, unregister as unregisterDevices }
+  export deviceApi.{
+    register as registerDevice,
+    unregister as unregisterDevices,
+    findLastManyByUserId as findDevicesByUserId,
+    deleteByUserIdAndId as deleteDevice
+  }
+
+  type Device = lila.push.Device
 
   private lazy val firebasePush = wire[FirebasePush]
 

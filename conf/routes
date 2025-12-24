@@ -848,6 +848,7 @@ GET   /account/personal-data           controllers.Account.data
 # App BC
 GET   /account/security                controllers.Account.security
 POST  /account/signout/:sessionId      controllers.Account.signout(sessionId)
+POST  /account/device/unregister/:deviceId  controllers.Account.unregisterDevice(deviceId: String)
 GET   /account/now-playing             controllers.Account.nowPlaying
 
 GET   /tutor                           controllers.Tutor.home()

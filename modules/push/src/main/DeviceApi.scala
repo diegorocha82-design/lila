@@ -30,6 +30,7 @@ final private class DeviceApi(coll: Coll)(using Executor):
     findLastManyByUserId(platform, 1)(userId).dmap(_.headOption)
 
   def register(user: User, platform: String, deviceId: String)(using ua: lila.core.net.UserAgent) =
+    lila.log("firebase").info(s"Register device for user ${user.id} on platform $platform: $deviceId ")
     lila.mon.push.register.in(platform).increment()
     coll.update
       .one(
@@ -46,8 +47,13 @@ final private class DeviceApi(coll: Coll)(using Executor):
       .void
 
   def unregister(user: User) =
+    lila.log("firebase").info(s"Unregister all devices for user ${user.id}")
     lila.mon.push.register.out.increment()
     coll.delete.one($doc("userId" -> user.id)).void
 
   def delete(device: Device) =
+    lila.log("firebase").info(s"Delete device ${device._id}")
     coll.delete.one($id(device._id)).void
+
+  def deleteByUserIdAndId(userId: UserId, deviceId: String): Funit =
+    coll.delete.one($doc("_id" -> deviceId, "userId" -> userId)).void

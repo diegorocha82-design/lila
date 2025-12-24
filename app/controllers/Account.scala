@@ -332,9 +332,11 @@ final class Account(
       sessions <- env.security.api.locatedOpenSessions(me, 50)
       clients <- env.oAuth.tokenApi.listClients(50)
       personalAccessTokens <- env.oAuth.tokenApi.countPersonal
+      pushDevices <- env.push.findDevicesByUserId("firebase", 50)(me)
+      devices = pushDevices.map(d => lila.security.PushDevice(d._id, d.platform, d.ua, d.seenAt))
       currentSessionId = env.security.api.reqSessionId(req)
       page <- Ok.async:
-        views.account.security(me, sessions, currentSessionId, clients, personalAccessTokens)
+        views.account.security(me, sessions, currentSessionId, clients, personalAccessTokens, devices)
     yield page.hasPersonalData
   }
 
@@ -346,6 +348,12 @@ final class Account(
         _ <- env.security.store.closeUserAndSessionId(me, SessionId(sessionId))
         _ <- env.push.webSubscriptionApi.unsubscribeBySession(SessionId(sessionId))
       yield NoContent
+  }
+
+  def unregisterDevice(deviceId: String) = Auth { _ ?=> me ?=>
+    env.push
+      .deleteDevice(me.userId, deviceId)
+      .inject(Redirect(routes.Account.security).flashSuccess("Device unregistered"))
   }
 
   private def renderReopen(form: Option[Form[Reopen]], msg: Option[String])(using Context) =

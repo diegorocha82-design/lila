@@ -107,7 +107,13 @@ final private class PushApi(
                       firebaseMod = offlineRoundNotif
                     )
                   for
+                    _ <-
+                      lila.log("firebase").info(s"Prepared push data for move $sanMove to user $userId")
+                      funit
                     _ <- pov.isMyTurn.so:
+                      lila
+                        .log("firebase")
+                        .info(s"Filtered to $userId since it's their turn. Checking if away...")
                       IfAway(pov)(maybePushNotif(userId, _.move, PrefEvent.gameEvent, data))
                     _ <- alwaysPushFirebaseData(userId, _.move, data)
                   yield ()
@@ -388,18 +394,26 @@ final private class PushApi(
       data: LazyFu[Data]
   ): Funit =
     notifyAllows(userId, event).flatMap: allows =>
+      lila.log("firebase").info(s"Checking push notification prefs for user $userId and event $event")
       filterPushNotif(NotifyAllows(userId, allows), monitor, data)
 
   private def filterPushNotif(to: NotifyAllows, monitor: MonitorType, data: LazyFu[Data]): Funit = for
     _ <- to.allows.web.so(webPush(to.userId, data).addEffects: res =>
+      lila
+        .log("firebase")
+        .info(s"Sent web push notification to user ${to.userId}; success?: ${res.isSuccess}")
       monitor(lila.mon.push.send)("web", res.isSuccess, 1))
     _ <- to.allows.device.so(firebasePush(to.userId, data).addEffects: res =>
+      lila
+        .log("firebase")
+        .info(s"Sent firebase push notification to user ${to.userId}; success?: ${res.isSuccess}")
       monitor(lila.mon.push.send)("firebase", res.isSuccess, 1))
   yield ()
 
   // ignores notification preferences
   private def alwaysPushFirebaseData(userId: UserId, monitor: MonitorType, data: LazyFu[Data]): Funit =
     firebasePush(userId, data.dmap(_.copy(firebaseMod = Data.FirebaseMod.DataOnly.some))).addEffects: res =>
+      lila.log("firebase").info(s"Sent firebase data message to user $userId; success?: ${res.isSuccess}")
       monitor(lila.mon.push.send)("firebaseData", res.isSuccess, 1)
 
   private def describeChallenge(c: Challenge) =
